@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import gc
 import logging
 import platform
 from typing import Any
@@ -122,6 +123,7 @@ def init_train_state(
     partial_params = _load_weights_and_validate(config.weight_loader, train_state_shape.params.to_pure_dict())
     replicated_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
 
+    logging.info("Starting JIT compilation of model init (this may take 5-15 minutes on first run)...")
     # Initialize the train state and mix in the partial params.
     train_state = jax.jit(
         init,
@@ -234,12 +236,14 @@ def main(config: _config.TrainConfig):
     wandb.log({"camera_views": images_to_log}, step=0)
 
     train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
+    logging.info("Model init completed, waiting for device synchronization...")
     jax.block_until_ready(train_state)
     logging.info(f"Initialized train state:\n{training_utils.array_tree_to_info(train_state.params)}")
 
     if resuming:
         train_state = _checkpoints.restore_state(checkpoint_manager, train_state, data_loader)
 
+    logging.info("Compiling training step (this may take 2-5 minutes on first run)...")
     ptrain_step = jax.jit(
         functools.partial(train_step, config),
         in_shardings=(replicated_sharding, train_state_sharding, data_sharding),
@@ -248,6 +252,7 @@ def main(config: _config.TrainConfig):
     )
 
     start_step = int(train_state.step)
+    logging.info(f"Starting training from step {start_step} to {config.num_train_steps}...")
     pbar = tqdm.tqdm(
         range(start_step, config.num_train_steps),
         initial=start_step,

@@ -555,12 +555,13 @@ class TrainConfig:
         if self.resume and self.overwrite:
             raise ValueError("Cannot resume and overwrite at the same time.")
 
-
+import openpi.training.umi_sim_configs as umi_sim_config
 # Use `get_config` if you need to get a config by name in your code.
 _CONFIGS = [
     #
     # Inference Aloha configs.
     #
+    *umi_sim_config.get_umi_sim_configs(),
     TrainConfig(
         name="pi0_aloha",
         model=pi0_config.Pi0Config(),
